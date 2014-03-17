@@ -37,15 +37,14 @@ describe EventStore::Journal do
       end.to raise_error(EventStore::StaleObjectException)
     end
 
-    it "raises a Riak::Conflict if multiple clients update the same key" do
-      pending "seems like an issue with the client library"
-      write_revision = lambda do
-        client = Riak::Client.new
-        current_revision = client.bucket("rev").get_or_new("person.#{@id}")
-        current_revision.raw_data = JSON.dump({rev: 10})
-        current_revision.content_type = 'application/json'
-        current_revision.store(bucket_type: 'strongly_consistent')
-        current_revision.reload
+    it "raises a EventStore::StaleObjectException if multiple clients update the same key" do
+      write_revision = lambda do |journal|
+        journal.postgres[:events].insert(
+          key: "person.#{@id}",
+          revision: 2,
+          riak_key: 'some key',
+          created_at: Time.now,
+        )
       end
       journal = EventStore::Journal.new
       journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
@@ -53,7 +52,7 @@ describe EventStore::Journal do
       journal = EventStore::Journal.new(write_revision)
       expect do
         journal.append("person.#{@id}", [{rev: 2, data: {baz: 'z'}}])
-      end.to raise_error(Riak::Conflict)
+      end.to raise_error(EventStore::StaleObjectException)
     end
   end
 end

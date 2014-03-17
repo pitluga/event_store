@@ -1,4 +1,5 @@
 require "riak"
+require "sequel"
 
 require "event_store/entity"
 require "event_store/journal"

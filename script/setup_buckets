@@ -1,5 +1,0 @@
-#!/bin/bash
-
-/usr/sbin/riak-admin bucket-type create strongly_consistent '{"props":{"consistent":true}}'
-/usr/sbin/riak-admin bucket-type status strongly_consistent
-/usr/sbin/riak-admin bucket-type activate strongly_consistent

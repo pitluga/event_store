@@ -1,0 +1,5 @@
+#!/bin/bash
+
+sudo -u postgres dropdb event_store
+sudo -u postgres createdb -O pair event_store
+bundle exec sequel -m db postgres://pair:pair@localhost:5433/event_store
