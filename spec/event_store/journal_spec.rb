@@ -39,13 +39,7 @@ describe EventStore::Journal do
 
     it "raises a EventStore::StaleObjectException if multiple clients update the same key" do
       write_revision = lambda do |journal|
-        journal.postgres[:revisions].insert(
-          key: "person.#{@id}",
-          revision: 2,
-          riak_key: 'some key',
-          signature: 'foo',
-          created_at: Time.now,
-        )
+        journal.append("person.#{@id}", [{rev: 2, data: {qux: 'z'}}], true)
       end
       journal = EventStore::Journal.new
       journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
@@ -63,6 +57,22 @@ describe EventStore::Journal do
       expect do
         journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
       end.to_not raise_error
+    end
+
+    it "is idempotent with multiple clients" do
+      write_revision = lambda do |journal|
+        journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}], true)
+      end
+
+      journal = EventStore::Journal.new(write_revision)
+      expect do
+        journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
+      end.to_not raise_error
+
+      person = journal.get("person.#{@id}")
+      person.revision.should == 1
+      person.snapshot.should == {foo: 'a'}
+      person.events.should == [{foo: 'a'}]
     end
   end
 end

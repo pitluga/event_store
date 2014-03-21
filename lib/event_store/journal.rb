@@ -8,20 +8,19 @@ module EventStore
       @testing_callback = testing_callback
     end
 
-    def append(key, events)
+    def append(key, events, skip_test_callback = false)
       revisions = _find_revisions(key)
       new_events = _subtract_preexisting_revisions(revisions, events)
       return unless new_events.any?
 
       _enforce_revision(revisions, new_events)
-      @testing_callback.call(self)
+      @testing_callback.call(self) unless skip_test_callback
 
-      _insert(key, new_events)
-    end
-
-    def _insert(key, events)
       new_revisions = _insert_events(key, events)
       _insert_revisions(new_revisions)
+    rescue Sequel::UniqueConstraintViolation
+      new_revisions.each { |revision| _events.delete(revision[:riak_key]) }
+      retry
     end
 
     def _insert_events(key, events)
@@ -43,15 +42,10 @@ module EventStore
     end
 
     def _insert_revisions(revisions)
-      begin
-        postgres.transaction do
-          revisions.each do |revision|
-            postgres[:revisions].insert(revision)
-          end
+      postgres.transaction do
+        revisions.each do |revision|
+          postgres[:revisions].insert(revision)
         end
-      rescue Sequel::UniqueConstraintViolation
-        revisions.each { |revision| _events.delete(revision[:riak_key]) }
-        raise StaleObjectException
       end
     end
 
