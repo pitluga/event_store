@@ -8,10 +8,11 @@ Sequel.migration do
       String :riak_key, :text => true, null: false
       DateTime :created_at, null: false
       String :signature, null: false
+      TrueClass :deleted, null: false, default: false
     end
 
     run('create extension btree_gist')
-    run('ALTER TABLE revisions ADD EXCLUDE USING GIST (key WITH =, box(point("start", 0), point("end", 0)) WITH &&)')
+    run('ALTER TABLE revisions ADD EXCLUDE USING GIST (key WITH =, box(point("start", 0), point("end", 0)) WITH &&) WHERE (deleted = false)')
   end
 
   down do

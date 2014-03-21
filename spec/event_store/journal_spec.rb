@@ -75,4 +75,32 @@ describe EventStore::Journal do
       person.events.should == [{"revision" => 1, "data" => {"foo" => 'a'}}]
     end
   end
+
+  describe "compact" do
+    it "compacts the events for a given key" do
+      journal = EventStore::Journal.new
+      journal.append("person.#{@id}", [{"revision" => 1, "data" => {"foo" => 'a'}}])
+      journal.append("person.#{@id}", [{"revision" => 2, "data" => {"bar" => 'qux'}}])
+
+      person = journal.get("person.#{@id}")
+      person.revision.should == 2
+      person.snapshot.should == {"foo" => 'a', "bar" => 'qux'}
+      person.events.should == [
+        {"revision" => 1, "data" => {"foo" => 'a'}},
+        {"revision" => 2, "data" => {"bar" => 'qux'}},
+      ]
+
+      journal.compact("person.#{@id}")
+
+      journal._find_revisions("person.#{@id}").size.should == 1
+
+      person = journal.get("person.#{@id}")
+      person.revision.should == 2
+      person.snapshot.should == {"foo" => 'a', "bar" => 'qux'}
+      person.events.should == [
+        {"revision" => 1, "data" => {"foo" => 'a'}},
+        {"revision" => 2, "data" => {"bar" => 'qux'}},
+      ]
+    end
+  end
 end

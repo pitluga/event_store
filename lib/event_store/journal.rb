@@ -12,6 +12,26 @@ module EventStore
       _do_append(key, events, revisions)
     end
 
+    def compact(key)
+      revisions = _find_revisions(key)
+      event_object = _insert_compacted_events(revisions.map { |r| r.fetch(:riak_key) })
+      compacted_revision = {
+        key: key,
+        start: revisions.min_by { |r| r[:start] }[:start],
+        end: revisions.max_by { |r| r[:end] }[:end],
+        riak_key: event_object.key,
+        signature: Digest::SHA256.hexdigest(event_object.raw_data),
+        created_at: Time.now
+      }
+
+      postgres.transaction do
+        revisions.each do |revision|
+          postgres[:revisions].where(id: revision[:id]).update(deleted: true)
+        end
+        postgres[:revisions].insert(compacted_revision)
+      end
+    end
+
     def _do_append(key, events, revisions)
       new_events = _subtract_preexisting_revisions(revisions, events)
       return unless new_events.any?
@@ -22,6 +42,14 @@ module EventStore
     rescue Sequel::Postgres::ExclusionConstraintViolation
       new_revisions.each { |revision| _events.delete(revision[:riak_key]) }
       append(key, events)
+    end
+
+    def _insert_compacted_events(riak_keys)
+      events = _event_data(riak_keys)
+      event_json = JSON.dump(events)
+      event_object = _events.new
+      event_object.raw_data = event_json
+      event_object.store(bucket_type: 'default')
     end
 
     def _insert_events(key, events)
@@ -40,7 +68,7 @@ module EventStore
     end
 
     def _find_revisions(key)
-      postgres[:revisions].where(key: key).order(Sequel.asc(:start)).all
+      postgres[:revisions].where(key: key, deleted: false).order(Sequel.asc(:start)).all
     end
 
     def _insert_revisions(revisions)
@@ -53,15 +81,16 @@ module EventStore
 
     def get(key)
       revisions = _find_revisions(key)
-      keys = revisions.map { |r| r.fetch(:riak_key) }
-
-      events_by_key = _events.get_many(keys)
-      events = revisions.map do |revision|
-        event = events_by_key[revision.fetch(:riak_key)]
-        JSON.parse(event.raw_data)
-      end
-
+      events = _event_data(revisions.map { |r| r.fetch(:riak_key) })
       Entity.new(key, revisions.last.fetch(:end), events)
+    end
+
+    def _event_data(riak_keys)
+      events_by_key = _events.get_many(riak_keys)
+      events = riak_keys.map do |riak_key|
+        event = events_by_key[riak_key]
+        JSON.parse(event.raw_data)
+      end.flatten
     end
 
     def _events
