@@ -1,13 +1,17 @@
 Sequel.migration do
   up do
     create_table :revisions do
+      primary_key :id
       String :key, text: true, null: false
-      Fixnum :revision, default: 1, null: false
+      Fixnum :start, null: false
+      Fixnum :end, null: false
       String :riak_key, :text => true, null: false
       DateTime :created_at, null: false
       String :signature, null: false
-      primary_key [:key, :revision], name: :revisions_pk
     end
+
+    run('create extension btree_gist')
+    run('ALTER TABLE revisions ADD EXCLUDE USING GIST (key WITH =, box(point("start", 0), point("end", 0)) WITH &&)')
   end
 
   down do

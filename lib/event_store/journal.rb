@@ -19,7 +19,7 @@ module EventStore
 
       new_revisions = _insert_events(key, events)
       _insert_revisions(new_revisions)
-    rescue Sequel::UniqueConstraintViolation
+    rescue Sequel::Postgres::ExclusionConstraintViolation
       new_revisions.each { |revision| _events.delete(revision[:riak_key]) }
       append(key, events)
     end
@@ -31,7 +31,8 @@ module EventStore
         event_object.raw_data = event_json
         event_object.store(bucket_type: 'default')
         { key: key,
-          revision: event.fetch("revision"),
+          start: event.fetch("revision"),
+          end: event.fetch("revision"),
           riak_key: event_object.key,
           signature: Digest::SHA256.hexdigest(event_json),
           created_at: Time.now }
@@ -39,7 +40,7 @@ module EventStore
     end
 
     def _find_revisions(key)
-      revisions = postgres[:revisions].where(key: key).order(Sequel.asc(:revision)).all
+      postgres[:revisions].where(key: key).order(Sequel.asc(:start)).all
     end
 
     def _insert_revisions(revisions)
@@ -51,7 +52,7 @@ module EventStore
     end
 
     def get(key)
-      revisions = postgres[:revisions].where(key: key).order(Sequel.asc(:revision)).all
+      revisions = _find_revisions(key)
       keys = revisions.map { |r| r.fetch(:riak_key) }
 
       events_by_key = _events.get_many(keys)
@@ -60,7 +61,7 @@ module EventStore
         JSON.parse(event.raw_data)
       end
 
-      Entity.new(key, revisions.last.fetch(:revision), events)
+      Entity.new(key, revisions.last.fetch(:end), events)
     end
 
     def _events
@@ -68,7 +69,7 @@ module EventStore
     end
 
     def _enforce_revision(revisions, future_events)
-      current_rev = revisions.map { |r| r[:revision] }.max || 0
+      current_rev = revisions.map { |r| r[:end] }.max || 0
       future_revisions = future_events.map { |e| e.fetch("revision") }
 
       raise StaleObjectException unless current_rev < future_revisions.min
@@ -77,7 +78,10 @@ module EventStore
     def _subtract_preexisting_revisions(revisions, events)
       new_events = []
       events.each do |e|
-        new_events << e unless revisions.any? {|r| r[:revision] == e["revision"] && r[:signature] == Digest::SHA256.hexdigest(JSON.dump(e)) }
+        new_events << e unless revisions.any? do |r|
+          (r[:start]..r[:end]).include?(e["revision"]) &&
+            r[:signature] == Digest::SHA256.hexdigest(JSON.dump(e))
+        end
       end
       new_events
     end
