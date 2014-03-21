@@ -1,5 +1,6 @@
 $LOAD_PATH.unshift File.expand_path('../../lib', __FILE__)
 require 'event_store'
+require 'rack/test'
 require 'support/id_generator'
 
 RSpec.configure do |config|
@@ -9,4 +10,9 @@ RSpec.configure do |config|
   config.order = 'random'
 
   config.include IdGenerator
+  config.include Rack::Test::Methods
+
+  def app
+    EventStore::App
+  end
 end
