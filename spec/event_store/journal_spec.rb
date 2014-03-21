@@ -102,5 +102,24 @@ describe EventStore::Journal do
         {"revision" => 2, "data" => {"bar" => 'qux'}},
       ]
     end
+
+    it "works when appending events to a compacted key" do
+      journal = EventStore::Journal.new
+      journal.append("person.#{@id}", [{"revision" => 1, "data" => {"foo" => 'a'}}])
+      journal.append("person.#{@id}", [{"revision" => 2, "data" => {"bar" => 'qux'}}])
+      journal.compact("person.#{@id}")
+      journal.append("person.#{@id}", [{"revision" => 3, "data" => {"baz" => 9}}])
+
+      journal._find_revisions("person.#{@id}").size.should == 2
+
+      person = journal.get("person.#{@id}")
+      person.revision.should == 3
+      person.snapshot.should == {"foo" => 'a', "bar" => 'qux', "baz" => 9}
+      person.events.should == [
+        {"revision" => 1, "data" => {"foo" => 'a'}},
+        {"revision" => 2, "data" => {"bar" => 'qux'}},
+        {"revision" => 3, "data" => {"baz" => 9}}
+      ]
+    end
   end
 end
