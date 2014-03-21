@@ -16,7 +16,6 @@ module EventStore
       rows = events.map do |event|
         event_object = _events.new
         event_object.raw_data = JSON.dump(event)
-        event_object.indexes["entity_bin"] = [key]
         event_object.store(bucket_type: 'default')
         { key: key,
           revision: event.fetch(:rev),
@@ -31,7 +30,7 @@ module EventStore
           end
         end
       rescue Sequel::UniqueConstraintViolation
-        rows.each { |r| _revisions.delete(r[:riak_key]) }
+        rows.each { |r| _events.delete(r[:riak_key]) }
         raise StaleObjectException
       end
     end
@@ -47,10 +46,6 @@ module EventStore
       end
 
       Entity.new(revisions.last.fetch(:revision), events)
-    end
-
-    def _revisions
-      @revisions ||= @riak.bucket("rev")
     end
 
     def _events
