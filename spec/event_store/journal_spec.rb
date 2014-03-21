@@ -43,6 +43,7 @@ describe EventStore::Journal do
           key: "person.#{@id}",
           revision: 2,
           riak_key: 'some key',
+          signature: 'foo',
           created_at: Time.now,
         )
       end
@@ -53,6 +54,15 @@ describe EventStore::Journal do
       expect do
         journal.append("person.#{@id}", [{rev: 2, data: {baz: 'z'}}])
       end.to raise_error(EventStore::StaleObjectException)
+    end
+
+    it "is idempotent" do
+      journal = EventStore::Journal.new
+      journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
+
+      expect do
+        journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
+      end.to_not raise_error
     end
   end
 end

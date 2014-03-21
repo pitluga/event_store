@@ -10,16 +10,21 @@ module EventStore
 
     def append(key, events)
       revisions = postgres[:events].where(key: key).order(Sequel.asc(:revision)).all
-      _enforce_revision(revisions, events)
+      new_events = _subtract_preexisting_revisions(revisions, events)
+      return unless new_events.any?
+
+      _enforce_revision(revisions, new_events)
       @revision_callback.call(self)
 
-      rows = events.map do |event|
+      rows = new_events.map do |event|
+        event_json = JSON.dump(event)
         event_object = _events.new
-        event_object.raw_data = JSON.dump(event)
+        event_object.raw_data = event_json
         event_object.store(bucket_type: 'default')
         { key: key,
           revision: event.fetch(:rev),
           riak_key: event_object.key,
+          signature: Digest::SHA256.hexdigest(event_json),
           created_at: Time.now }
       end
 
@@ -57,6 +62,14 @@ module EventStore
       future_revisions = future_events.map { |e| e.fetch(:rev) }
 
       raise StaleObjectException unless current_rev < future_revisions.min
+    end
+
+    def _subtract_preexisting_revisions(revisions, events)
+      new_events = []
+      events.each do |e|
+        new_events << e unless revisions.any? {|r| r[:revision] == e[:rev] && r[:signature] == Digest::SHA256.hexdigest(JSON.dump(e)) }
+      end
+      new_events
     end
   end
 end
