@@ -38,15 +38,13 @@ describe EventStore::Journal do
     end
 
     it "raises a EventStore::StaleObjectException if multiple clients update the same key" do
-      write_revision = lambda do |journal|
-        journal.append("person.#{@id}", [{rev: 2, data: {qux: 'z'}}], true)
-      end
       journal = EventStore::Journal.new
       journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
+      stale_revisions = journal._find_revisions("person.#{@id}")
+      journal.append("person.#{@id}", [{rev: 2, data: {baz: 'z'}}])
 
-      journal = EventStore::Journal.new(write_revision)
       expect do
-        journal.append("person.#{@id}", [{rev: 2, data: {baz: 'z'}}])
+        journal._do_append("person.#{@id}", [{rev: 2, data: {qux: 'z'}}], stale_revisions)
       end.to raise_error(EventStore::StaleObjectException)
     end
 
@@ -60,13 +58,12 @@ describe EventStore::Journal do
     end
 
     it "is idempotent with multiple clients" do
-      write_revision = lambda do |journal|
-        journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}], true)
-      end
+      journal = EventStore::Journal.new
+      journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
 
-      journal = EventStore::Journal.new(write_revision)
+      stale_revisions = []
       expect do
-        journal.append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}])
+        journal._do_append("person.#{@id}", [{rev: 1, data: {foo: 'a'}}], stale_revisions)
       end.to_not raise_error
 
       person = journal.get("person.#{@id}")

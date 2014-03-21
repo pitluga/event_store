@@ -2,25 +2,26 @@ module EventStore
   class Journal
     attr_reader :riak, :postgres
 
-    def initialize(testing_callback = lambda { |_| })
+    def initialize
       @riak = Riak::Client.new
       @postgres = Sequel.connect('postgres://pair:pair@localhost:5433/event_store')
-      @testing_callback = testing_callback
     end
 
-    def append(key, events, skip_test_callback = false)
+    def append(key, events)
       revisions = _find_revisions(key)
+      _do_append(key, events, revisions)
+    end
+
+    def _do_append(key, events, revisions)
       new_events = _subtract_preexisting_revisions(revisions, events)
       return unless new_events.any?
-
       _enforce_revision(revisions, new_events)
-      @testing_callback.call(self) unless skip_test_callback
 
       new_revisions = _insert_events(key, events)
       _insert_revisions(new_revisions)
     rescue Sequel::UniqueConstraintViolation
       new_revisions.each { |revision| _events.delete(revision[:riak_key]) }
-      retry
+      append(key, events)
     end
 
     def _insert_events(key, events)
