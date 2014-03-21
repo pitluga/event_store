@@ -1,6 +1,6 @@
 Sequel.migration do
   up do
-    create_table :events do
+    create_table :revisions do
       String :key, text: true, null: false
       Fixnum :revision, default: 1, null: false
       String :riak_key, :text => true, null: false

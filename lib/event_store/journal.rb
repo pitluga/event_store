@@ -2,21 +2,30 @@ module EventStore
   class Journal
     attr_reader :riak, :postgres
 
-    def initialize(revision_callback = lambda { |_| })
+    def initialize(testing_callback = lambda { |_| })
       @riak = Riak::Client.new
       @postgres = Sequel.connect('postgres://pair:pair@localhost:5433/event_store')
-      @revision_callback = revision_callback
+      @testing_callback = testing_callback
     end
 
     def append(key, events)
-      revisions = postgres[:events].where(key: key).order(Sequel.asc(:revision)).all
+      revisions = _find_revisions(key)
       new_events = _subtract_preexisting_revisions(revisions, events)
       return unless new_events.any?
 
       _enforce_revision(revisions, new_events)
-      @revision_callback.call(self)
+      @testing_callback.call(self)
 
-      rows = new_events.map do |event|
+      _insert(key, new_events)
+    end
+
+    def _insert(key, events)
+      new_revisions = _insert_events(key, events)
+      _insert_revisions(new_revisions)
+    end
+
+    def _insert_events(key, events)
+      events.map do |event|
         event_json = JSON.dump(event)
         event_object = _events.new
         event_object.raw_data = event_json
@@ -27,21 +36,27 @@ module EventStore
           signature: Digest::SHA256.hexdigest(event_json),
           created_at: Time.now }
       end
+    end
 
+    def _find_revisions(key)
+      revisions = postgres[:revisions].where(key: key).order(Sequel.asc(:revision)).all
+    end
+
+    def _insert_revisions(revisions)
       begin
         postgres.transaction do
-          rows.each do |row|
-            postgres[:events].insert(row)
+          revisions.each do |revision|
+            postgres[:revisions].insert(revision)
           end
         end
       rescue Sequel::UniqueConstraintViolation
-        rows.each { |r| _events.delete(r[:riak_key]) }
+        revisions.each { |revision| _events.delete(revision[:riak_key]) }
         raise StaleObjectException
       end
     end
 
     def get(key)
-      revisions = postgres[:events].where(key: key).order(Sequel.asc(:revision)).all
+      revisions = postgres[:revisions].where(key: key).order(Sequel.asc(:revision)).all
       keys = revisions.map { |r| r.fetch(:riak_key) }
 
       events_by_key = _events.get_many(keys)

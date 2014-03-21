@@ -39,7 +39,7 @@ describe EventStore::Journal do
 
     it "raises a EventStore::StaleObjectException if multiple clients update the same key" do
       write_revision = lambda do |journal|
-        journal.postgres[:events].insert(
+        journal.postgres[:revisions].insert(
           key: "person.#{@id}",
           revision: 2,
           riak_key: 'some key',
