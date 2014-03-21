@@ -31,7 +31,7 @@ module EventStore
         event_object.raw_data = event_json
         event_object.store(bucket_type: 'default')
         { key: key,
-          revision: event.fetch(:rev),
+          revision: event.fetch(:revision),
           riak_key: event_object.key,
           signature: Digest::SHA256.hexdigest(event_json),
           created_at: Time.now }
@@ -69,7 +69,7 @@ module EventStore
 
     def _enforce_revision(revisions, future_events)
       current_rev = revisions.map { |r| r[:revision] }.max || 0
-      future_revisions = future_events.map { |e| e.fetch(:rev) }
+      future_revisions = future_events.map { |e| e.fetch(:revision) }
 
       raise StaleObjectException unless current_rev < future_revisions.min
     end
@@ -77,7 +77,7 @@ module EventStore
     def _subtract_preexisting_revisions(revisions, events)
       new_events = []
       events.each do |e|
-        new_events << e unless revisions.any? {|r| r[:revision] == e[:rev] && r[:signature] == Digest::SHA256.hexdigest(JSON.dump(e)) }
+        new_events << e unless revisions.any? {|r| r[:revision] == e[:revision] && r[:signature] == Digest::SHA256.hexdigest(JSON.dump(e)) }
       end
       new_events
     end
